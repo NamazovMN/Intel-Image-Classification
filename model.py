@@ -1,102 +1,184 @@
 import os
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, GlobalAveragePooling2D, MaxPooling2D, \
-    BatchNormalization
-from tensorflow.keras import callbacks
-from tensorflow.keras import regularizers, optimizers
+import pickle
+
+import tensorflow as tf
+from tensorflow.keras import layers, models
 from tensorflow.keras.applications import VGG16
 
 
-class CNNIntel(object):
-    def __init__(self, batch_size, num_classes, learning_rate, epochs, models_path, input_shape):
-        self.batch_size = batch_size
-        self.num_classes = num_classes
-        self.learning_rate = learning_rate
-        self.epochs = epochs
-        self.models_path = models_path
-        self.input_shape = input_shape
+class BuildModel:
+    """
+    Class is used as dynamic model builder. It also checks compatibility among provided parameters
+    """
 
-    def model(self, train_dataset, train_labels, validation_dataset, model_name):
-        early_stopping = callbacks.EarlyStopping(monitor='val_loss', patience=25)
+    def __init__(self, config_parameters: dict):
+        """
+        Method is an initializer for the class
+        :param config_parameters: required parameters for the project
+        """
+        self.configuration = config_parameters
+        self.check_compatibility_cnn()
+        self.check_compatibility_fcn()
+        self.model = self.build_model_layers()
+        self.save_model_structure()
 
-        model = Sequential()
+    def check_compatibility_fcn(self) -> None:
+        """
+        Method is used as compatibility checker among provided information for Fully Connected Network (FCN)
+        :return: None
+        """
+        fcn_layers = ['dropout', 'bn_lin']
+        for each_layer in fcn_layers:
+            if len(self.configuration[each_layer]) != len(self.configuration['dense']):
+                raise IndexError(f"Number of {each_layer} is not compatible with number of dense layers")
 
-        model.add(Conv2D(64, (5, 5), activation='relu', input_shape=self.input_shape))
-        model.add(MaxPooling2D((4, 4)))
-        model.add(Dropout(0.3))
-        model.add(BatchNormalization())
+    def check_compatibility_cnn(self) -> None:
+        """
+        Method is used as compatibility checker among provided information for Convolutional Neural Network (CNN)
+        :return: None
+        """
+        cnn_layers = ['dropout_cnn', 'bn', 'mp_kernels', 'mp_strides', 'kernels', 'strides']
+        for each_layer in cnn_layers:
+            if len(self.configuration[each_layer]) != len(self.configuration['conv']):
+                raise IndexError(f"Number of {each_layer} layers is not compatible with conv layers")
 
-        model.add(Conv2D(128, (4, 4), activation="relu"))
-        model.add(MaxPooling2D((3, 3)))
-        model.add(Dropout(0.3))
-        model.add(BatchNormalization())
+    def build_conv_layers(self) -> dict:
+        """
+        Method is utilized to collect layers will be used for CNN model
+        :return: dictionary where keys are name of layers and values are specific layers
+        """
+        conv_list = dict()
+        image_dim = self.configuration['image_dim']
+        for idx, each in enumerate(self.configuration['conv']):
+            if idx == 0:
+                conv_layer = layers.Conv2D(
+                    each,
+                    kernel_size=self.configuration['kernels'][idx],
+                    strides=self.configuration['strides'][idx],
+                    activation='relu', input_shape=(image_dim, image_dim, 3))
 
-        model.add(Conv2D(256, (3, 3), activation="relu"))
-        model.add(MaxPooling2D((2, 2)))
-        model.add(Dropout(0.3))
-        model.add(BatchNormalization())
+            else:
+                conv_layer = layers.Conv2D(
+                    each,
+                    kernel_size=self.configuration['kernels'][idx],
+                    strides=self.configuration['strides'][idx],
+                    activation='relu')
+            conv_list[f'conv_{idx}'] = conv_layer
+            conv_list[f'pooling_{idx}'] = layers.MaxPooling2D(
+                pool_size=(self.configuration['mp_kernels'][idx], self.configuration['mp_strides'][idx])
+            )
+            if self.configuration['bn'][idx]:
+                conv_list[f'bn_{idx}'] = layers.BatchNormalization()
+            if self.configuration['dropout_cnn'][idx]:
+                conv_list[f'dropout_{idx}'] = layers.Dropout(self.configuration['dropout_cnn'][idx])
+        conv_list['flatten'] = layers.Flatten()
+        return conv_list
 
-        model.add(Flatten())
+    def build_linear_layers(self) -> dict:
+        """
+        Method is used for collecting layers of FCN
+        :return: dictionary where keys are names of layers and values are specific layers
+        """
+        linear_layers = dict()
 
-        model.add(Dense(64, activation='relu', kernel_regularizer=regularizers.l2(l=0.001)))
-        model.add(Dropout(0.5))
-        model.add(Dense(24, activation='relu'))
-        model.add(Dropout(0.4))
-        model.add(Dense(self.num_classes, activation='softmax'))
+        for idx, layer in enumerate(self.configuration['dense']):
+            linear_layers[f'dense_{idx}'] = layers.Dense(self.configuration['dense'][idx])
+            if self.configuration['dropout']:
+                linear_layers[f'dropout_lin_{idx}'] = layers.Dropout(self.configuration['dropout'][idx])
+            if self.configuration['bn_lin']:
+                linear_layers[f'bn_lin_{idx}'] = layers.BatchNormalization()
+        linear_layers['out'] = layers.Dense(6, activation='softmax')
+        return linear_layers
 
-        model.summary()
+    def build_model_layers(self) -> dict:
+        """
+        Method is utilized for setting the model layers up
+        :return: dictionary where keys are names of layers and values are specific layers
+        """
+        model_layers = self.build_conv_layers()
+        for name, layer in self.build_linear_layers().items():
+            model_layers[name] = layer
 
-        optimizer = optimizers.Adam(lr=self.learning_rate)
-        model.compile(optimizer=optimizer, loss="sparse_categorical_crossentropy", metrics=['accuracy'])
-        history = model.fit(train_dataset, train_labels, epochs=self.epochs, validation_data=validation_dataset,
-                            callbacks=[early_stopping], verbose=2)
-        path = os.path.join(self.models_path, model_name + '.h5')
-        model.save(path)
+        return model_layers
 
-        return history
+    def save_model_structure(self) -> None:
+        """
+        Method is utilized for saving the model structure
+        :return: None
+        """
+        model_struct_file = os.path.join('train_results',
+                                         f'experiment_{self.configuration["exp_num"]}/model_structure.pickle')
+        with open(model_struct_file, 'wb') as model_file:
+            pickle.dump(self.model, model_file)
 
 
-class TransferModel(object):
-    def __init__(self, epochs, input_shape, models_path, defrosted=True, weights=None, trainable=True):
-        self.epochs = epochs
-        self.input_shape = input_shape
-        self.models_path = models_path
-        self.defrosted = defrosted
-        self.weights = weights  # if it is none then model is going to be non-pretrained
-        self.trainable = trainable  # if trainable is true, non-pretrained model will start to train
+class TransferModel(tf.Module):
+    """
+    Class is utilized for setting the Transfer Learning Model
+    """
 
-    def model(self, train_data, train_labels, validation_dataset, model_name):
-        model = VGG16(input_shape=self.input_shape, include_top=False, weights=self.weights)
-        early_stopping = callbacks.EarlyStopping(monitor='val_loss', patience=5)
-        if self.defrosted:
+    def __init__(self, parameters: dict, defrosted: bool = True):
+        """
+        Method is utilized as initializer of the class
+        :param parameters: dictionary object which includes all required information for this very task
+        :param defrosted: boolean variable specifies whether CNN layers will be frozen or not
+        """
+        super().__init__()
+        input_shape = (parameters['image_dim'], parameters['image_dim'], 3)
+        model = VGG16(input_shape=input_shape, include_top=False, weights=parameters['transfer_weights'])
+        if defrosted:
             for layer in model.layers[:10]:
                 layer.trainable = False
         else:
-            model.trainable = self.trainable
+            model.trainable = True
 
         model.summary()
+        global_average_layer = layers.GlobalAveragePooling2D()
 
-        global_average_layer = GlobalAveragePooling2D()
+        prediction_layer = layers.Dense(len(parameters['labels_dict']), activation='sigmoid')
+        self.model = models.Sequential([model, global_average_layer, prediction_layer])
 
-        prediction_layer = Dense(6, activation='sigmoid')
+    def __call__(self, input_data: tf.Tensor, training: bool = True) -> tf.Tensor:
+        """
+        Method is a call function to perform feed-forward phase of training
+        :param input_data: batch of image tensors or single image tensors
+        :param training: boolean variable specifies whether training (True) or evaluation (False) is performed
+        :return: output in shape of batch_size x number of classes
+        """
+        out = self.model(input_data, training=training)
+        return out
 
-        model_transfer = Sequential([model, global_average_layer, prediction_layer])
 
-        base_learning_rate = 0.0001
-        model_transfer.compile(
-            optimizer=optimizers.RMSprop(lr=base_learning_rate),
-            loss='sparse_categorical_crossentropy',
-            metrics=['accuracy']
-        )
+class MySequentialModule(tf.Module):
+    def __init__(self, model_object: BuildModel, name: str = 'IntelModel'):
+        """
+        Method is utilized as initializer of the class
 
-        # Fitting the model with train batches
-        history = model_transfer.fit(
-            train_data, train_labels,
-            epochs=self.epochs, verbose=2,
-            validation_data=validation_dataset,
-            callbacks=[early_stopping]
-        )
-        path = os.path.join(self.models_path, model_name + '.h5')
-        model.save(path)
+        :param model_object: model object which conveys model structure for the specific experiment
+        :param name: string object for indicating the model name
+        """
+        super().__init__(name=name)
+        self.model = models.Sequential()
+        for name, layer in model_object.model.items():
+            self.model.add(layer)
 
-        return history
+    def __call__(self, input_data: tf.Tensor, training: bool = True) -> tf.Tensor:
+        """
+        Method is a call function to perform feed-forward phase of training
+        :param input_data: batch of image tensors or single image tensors
+        :param training: boolean variable specifies whether training (True) or evaluation (False) is performed
+        :return: output in shape of batch_size x number of classes
+        """
+        out = self.model(input_data, training=training)
+
+        return out
+# model = models.Sequential()
+# model = models.Sequential()
+#     model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(50, 50, 3)))
+#     model.add(layers.MaxPooling2D((2, 2)))
+#     model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+#     model.add(layers.MaxPooling2D((2, 2)))
+#     model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+#     model.add(layers.Flatten())
+#     model.add(layers.Dense(64, activation='relu'))
+#     model.add(layers.Dense(10))
