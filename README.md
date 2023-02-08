@@ -23,3 +23,7 @@ Additionally, you can find results for transfer learning model from following fi
 <img src="train_results/experiment_1/acc_plot.png" width="250" height="200">  <img src="train_results/experiment_1/loss_plot.png" width="250" height="200">
  </p>
 
+Confusion matrices for each model (Our CNN on the left, VGG16 on the right) are depicted by following figures:
+ <p align="center">
+<img src="train_results/experiment_13/confusion_matrix.png" width="350" height="250">  <img src="train_results/experiment_1/confusion_matrix.png" width="350" height="250">
+ </p>
