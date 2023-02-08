@@ -18,5 +18,8 @@ Accuracy and Loss performance of our CNN model can be seen from following figure
  <p align="center">
 <img src="train_results/experiment_13/acc_plot.png" width="250" height="200">  <img src="train_results/experiment_13/loss_plot.png" width="250" height="200">
  </p>
-
+Additionally, you can find results for transfer learning model from following figures, where the first one is for accuracy and the second one is for loss performances.
+ <p align="center">
+<img src="train_results/experiment_1/acc_plot.png" width="250" height="200">  <img src="train_results/experiment_1/loss_plot.png" width="250" height="200">
+ </p>
 
