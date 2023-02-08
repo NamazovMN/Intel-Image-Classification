@@ -31,4 +31,5 @@ Confusion matrices for each model (Our CNN on the left, VGG16 on the right) are 
 Even though VGG16 definitely outperforms our model's results, it can be seen from confusion matrices that CNN model's results are also satisfactory. However, it will be refined in future.
 
 *Regards*
-**Mahammad Namazov**
+
+**Mahammad Namazov (NamazovMN)**
