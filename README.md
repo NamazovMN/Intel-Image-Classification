@@ -27,3 +27,8 @@ Confusion matrices for each model (Our CNN on the left, VGG16 on the right) are 
  <p align="center">
 <img src="train_results/experiment_13/confusion_matrix.png" width="350" height="250">  <img src="train_results/experiment_1/confusion_matrix.png" width="350" height="250">
  </p>
+## Conclusion
+Even though VGG16 definitely outperforms our model's results, it can be seen from confusion matrices that CNN model's results are also satisfactory. However, it will be refined in future.
+
+*Regards*
+**Mahammad Namazov**
